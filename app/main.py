@@ -107,7 +107,7 @@ async def create_delivery_route(request: Request) -> dict:
     delivery = create_delivery(body)
     start_delivery_simulation(delivery)
     return {
-        "delivery_id": delivery.id,
+        "id": delivery.id,
         "tracking_url": delivery.tracking_url,
         "uber_response": {"status": delivery.status, **delivery.request_body},
     }
