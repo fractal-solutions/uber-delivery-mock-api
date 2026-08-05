@@ -9,7 +9,7 @@ import logging
 
 DEFAULT_COURIER = {
     "name": "Uber",
-    "public_phone_info": "+1-555-010-0000",
+    "phone_number": "+1-555-010-0000",
     "lat": 37.7749,
     "lng": -122.4194,
     "vehicle_color": "Black",
