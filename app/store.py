@@ -65,6 +65,23 @@ class Delivery:
             "created_at": self.created_at,
         }
 
+    def to_uber_dict(self) -> dict:
+        """Serialize using the shape the real Uber Direct API returns."""
+        return {
+            "id": self.id,
+            "status": self.status,
+            "fee": self.fee,
+            "currency": "KES",
+            "tracking_url": self.tracking_url,
+            "courier": self.courier if self.status != "pending" else None,
+            "courier_imminent": self.status == "dropoff",
+            "manifest_items": self.manifest_items,
+            "customer_id": self.customer_id,
+            "created_at": self.created_at,
+            "pickup_eta": self.pickup_eta,
+            "dropoff_eta": self.dropoff_eta,
+        }
+
 
 def random_fee() -> float:
     return round(config.min_fee + random.random() * (config.max_fee - config.min_fee), 2)

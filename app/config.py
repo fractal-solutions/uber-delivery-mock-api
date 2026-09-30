@@ -30,6 +30,11 @@ class Config:
     client_id: str = os.getenv("CLIENT_ID", "test-client-id")
     client_secret: str = os.getenv("CLIENT_SECRET", "test-client-secret")
     webhook_url: str = os.getenv("WEBHOOK_URL", "").strip()
+    # When set, webhook requests are signed with this key using the same
+    # HMAC-SHA256 scheme the real Uber API uses (X-Uber-Signature header).
+    webhook_signing_key: str = os.getenv("UBER_WEBHOOK_SIGNING_KEY", "").strip()
+    # Access token returned by the OAuth token endpoint.
+    access_token: str = os.getenv("ACCESS_TOKEN", "dummy_access_token").strip() or "dummy_access_token"
 
     # Delivery simulation timing in milliseconds:
     # pending -> pickup -> pickup_complete -> dropoff -> delivered

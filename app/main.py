@@ -52,6 +52,19 @@ async def _form_body(request: Request) -> dict:
     return body
 
 
+async def _json_or_form_body(request: Request) -> dict:
+    """Read either a JSON body (what the real Uber API accepts) or a form body
+    (kept for backwards compatibility with the original dummy server)."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            payload = await request.json()
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+    return await _form_body(request)
+
+
 def _log_request(request: Request, body: object = None) -> None:
     logger.info(
         json.dumps(
@@ -77,6 +90,11 @@ def root() -> dict:
             "url": config.webhook_url or None,
         },
         "routes": [
+            "POST /oauth/v2/token (Uber OAuth)",
+            "POST /v1/customers/{customer_id}/delivery_quotes (Uber Direct)",
+            "POST /v1/customers/{customer_id}/deliveries (Uber Direct)",
+            "GET /v1/customers/{customer_id}/deliveries/{delivery_id} (Uber Direct)",
+            "POST /v1/customers/{customer_id}/deliveries/{delivery_id}/cancel (Uber Direct)",
             "POST /auth",
             "POST /deliveries",
             "GET /deliveries/{id}",
@@ -87,17 +105,85 @@ def root() -> dict:
     }
 
 
+def _issue_token(body: dict) -> dict:
+    if body.get("client_id") == config.client_id and body.get("client_secret") == config.client_secret:
+        return {
+            "access_token": config.access_token,
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+    raise HTTPException(
+        status_code=401,
+        detail={"error": "invalid_client", "error_description": "Invalid client credentials."},
+    )
+
+
+@app.post("/oauth/v2/token")
+@app.post("/v1/oauth/v2/token")
+async def oauth_token(request: Request) -> dict:
+    body = await _form_body(request)
+    _log_request(request, body)
+    return _issue_token(body)
+
+
 @app.post("/auth")
 async def auth(request: Request) -> dict:
     body = await _form_body(request)
     _log_request(request, body)
-    if body.get("client_id") == config.client_id and body.get("client_secret") == config.client_secret:
-        return {
-            "access_token": "dummy_access_token",
-            "expires_in": 3600,
-            "token_type": "Bearer",
-        }
-    raise HTTPException(status_code=401, detail={"error": "invalid_client"})
+    return _issue_token(body)
+
+
+# --- Uber Direct v1 routes: mirror the real Uber API (JSON bodies) ---
+
+
+@app.post("/v1/customers/{customer_id}/delivery_quotes", status_code=201)
+async def uber_delivery_quotes(customer_id: str, request: Request) -> dict:
+    body = await _json_or_form_body(request)
+    _log_request(request, body)
+    return {
+        "id": f"quote_{uuid.uuid4().hex[:8]}",
+        "fee": random_fee(),
+        "currency": "KES",
+        "duration": 1800,
+        "dropoff_eta": datetime.now(timezone.utc).isoformat(),
+        "expires_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/v1/customers/{customer_id}/deliveries", status_code=201)
+async def uber_create_delivery(customer_id: str, request: Request) -> dict:
+    body = await _json_or_form_body(request)
+    _log_request(request, body)
+    body.setdefault("customer_id", customer_id)
+    delivery = create_delivery(body)
+    start_delivery_simulation(delivery)
+    return delivery.to_uber_dict()
+
+
+@app.get("/v1/customers/{customer_id}/deliveries/{delivery_id}")
+async def uber_get_delivery(customer_id: str, delivery_id: str, request: Request) -> dict:
+    delivery = get_delivery(delivery_id)
+    if delivery is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "delivery_not_found", "delivery_id": delivery_id},
+        )
+    _log_request(request)
+    return delivery.to_uber_dict()
+
+
+@app.post("/v1/customers/{customer_id}/deliveries/{delivery_id}/cancel")
+async def uber_cancel_delivery(customer_id: str, delivery_id: str, request: Request) -> dict:
+    body = await _json_or_form_body(request)
+    _log_request(request, body)
+    delivery = get_delivery(delivery_id)
+    if delivery is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "delivery_not_found", "delivery_id": delivery_id},
+        )
+    cancel_delivery_simulation(delivery)
+    return delivery.to_uber_dict()
 
 
 @app.post("/customers/{customer_id}/deliveries", status_code=201)
